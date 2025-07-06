@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Question Extractor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #e0e7ff 0%, #f4f4f4 100%);
+            min-height: 100vh;
+        }
+        h1 {
+            text-align: center;
+            color: #1a237e;
+            margin-bottom: 10px;
+            font-size: 2.2rem;
+            letter-spacing: 1px;
+        }
+        #upload-section {
+            margin-bottom: 24px;
+            text-align: center;
+        }
+        #pdf-input {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #bdbdbd;
+            background: #fff;
+            font-size: 1rem;
+        }
+        button {
+            padding: 10px 28px;
+            background: linear-gradient(90deg, #1976d2 0%, #64b5f6 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            font-weight: 500;
+            transition: background 0.2s;
+            margin-left: 10px;
+            box-shadow: 0 2px 8px rgba(25, 118, 210, 0.08);
+        }
+        button:hover {
+            background: linear-gradient(90deg, #1565c0 0%, #1976d2 100%);
+        }
+        #output {
+            background: white;
+            padding: 18px 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 16px rgba(25, 118, 210, 0.10);
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin-bottom: 30px;
+            overflow-x: auto;
+        }
+        h2 {
+            color: #1976d2;
+            margin-top: 0;
+            font-size: 1.3rem;
+            border-bottom: 1px solid #e3e3e3;
+            padding-bottom: 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+            font-size: 1rem;
+            background: #fafbfc;
+        }
+        th, td {
+            padding: 10px 8px;
+            border: 1px solid #e0e0e0;
+            text-align: center;
+        }
+        th {
+            background: #1976d2;
+            color: #fff;
+            font-weight: 600;
+        }
+        tr:nth-child(even) td {
+            background: #f5f7fa;
+        }
+        tr.correct-row td {
+            background: #e8f5e9 !important;
+            color: #256029;
+        }
+        tr.incorrect-row td {
+            background: #ffebee !important;
+            color: #b71c1c;
+        }
+        @media (max-width: 700px) {
+            body {
+                padding: 8px;
+            }
+            h1 {
+                font-size: 1.3rem;
+            }
+            #output {
+                padding: 8px 2px;
+            }
+            table, thead, tbody, th, td, tr {
+                font-size: 0.95rem;
+            }
+            table {
+                display: block;
+                overflow-x: auto;
+                white-space: nowrap;
+            }
+        }
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 1.1rem;
+            }
+            th, td {
+                padding: 7px 4px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>UGC NET 2025 CS Marks Calculation</h1>
+    <div id="upload-section">
+        <input type="file" id="pdf-input" accept=".pdf">
+        <button onclick="processPDF()">Process PDF</button>
+    </div>
+    <div id="output">Extracted data will appear here...</div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+        let answerKey = null;
+
+        // Load answerkey.json from local file automatically
+        fetch('answerkey.json')
+            .then(response => response.json())
+            .then(data => {
+                answerKey = data;
+            })
+            .catch(err => {
+                document.getElementById('output').textContent = 'Could not load answerkey.json!';
+            });
+
+        async function processPDF() {
+            const fileInput = document.getElementById('pdf-input');
+            const outputDiv = document.getElementById('output');
+
+            if (!fileInput.files.length) {
+                outputDiv.textContent = 'Please select a PDF file.';
+                return;
+            }
+            if (!answerKey) {
+                outputDiv.textContent = 'Answer key not loaded!';
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+
+            let fullText = '';
+            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                const page = await pdf.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ');
+                fullText += pageText + '\n';
+            }
+
+            // Extract metadata
+            const metadataPatterns = {
+                applicationNo: /Application No\s+(\w+)/,
+                candidateName: /Candidate Name\s+(.+?)(?:\s{2,}|$)/,
+                rollNo: /Roll No.\s+(\w+)/,
+                testDate: /Test Date\s+([\d\/]+)/,
+                testTime: /Test Time\s+(.+?)(?:\s{2,}|$)/,
+                subject: /Subject\s+(\d+\s+.+?)(?:\s{2,}|$)/
+            };
+            const metadata = {};
+            for (const key in metadataPatterns) {
+                const match = fullText.match(metadataPatterns[key]);
+                metadata[key] = match ? match[1].trim() : '-';
+            }
+
+            const extractedData = extractPDFData(fullText);
+
+            // Prepare answer map
+            const answerMap = {};
+            answerKey.forEach(q => answerMap[q.id] = q.answer);
+
+            // Calculate results
+            let correct = 0, incorrect = 0, attempted = 0, obtainedMarks = 0;
+            const results = extractedData.questions.map(q => {
+                const correctAnswer = answerMap[q.questionId];
+                const chosen = Number(q.chosenOption);
+                const isCorrect = correctAnswer !== undefined && chosen === Number(correctAnswer);
+                attempted++;
+                if (isCorrect) {
+                    correct++;
+                    obtainedMarks += 2;
+                } else {
+                    incorrect++;
+                }
+                return {
+                    questionId: q.questionId,
+                    chosenOption: chosen,
+                    correctAnswer: correctAnswer !== undefined ? correctAnswer : '-',
+                    status: isCorrect ? 'Correct' : 'Incorrect',
+                    marks: isCorrect ? 2 : 0
+                };
+            });
+
+            // Metadata
+            const totalQuestions = answerKey.length;
+            const percentage = ((obtainedMarks / 300) * 100).toFixed(2);
+
+            // Build HTML output
+            let html = `
+                <h2>Examination Summary</h2>
+                <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+                    <tr><td><b>Application No</b></td><td>${metadata.applicationNo}</td></tr>
+                    <tr><td><b>Candidate Name</b></td><td>${metadata.candidateName}</td></tr>
+                    <tr><td><b>Roll No.</b></td><td>${metadata.rollNo}</td></tr>
+                    <tr><td><b>Test Date</b></td><td>${metadata.testDate}</td></tr>
+                    <tr><td><b>Test Time</b></td><td>${metadata.testTime}</td></tr>
+                    <tr><td><b>Subject</b></td><td>${metadata.subject}</td></tr>
+                    <tr><td><b>Total Questions</b></td><td>${totalQuestions}</td></tr>
+                    <tr><td><b>Attempted</b></td><td>${attempted}</td></tr>
+                    <tr><td><b>Correct</b></td><td>${correct}</td></tr>
+                    <tr><td><b>Incorrect</b></td><td>${incorrect}</td></tr>
+                    <tr><td><b>Total Marks</b></td><td>300</td></tr>
+                    <tr><td><b>Obtained Marks</b></td><td>${obtainedMarks}</td></tr>
+                    <tr><td><b>Percentage</b></td><td>${percentage}%</td></tr>
+                </table>
+                <h2>Question-wise Result</h2>
+                <table style="width:100%;border-collapse:collapse;">
+                    <tr style="background:#007bff;color:#fff;">
+                        <th style="padding:8px;border:1px solid #ccc;">Question ID</th>
+                        <th style="padding:8px;border:1px solid #ccc;">Chosen Option</th>
+                        <th style="padding:8px;border:1px solid #ccc;">Correct Answer</th>
+                        <th style="padding:8px;border:1px solid #ccc;">Status</th>
+                        <th style="padding:8px;border:1px solid #ccc;">Marks</th>
+                    </tr>
+                    ${results.map(r => `
+    <tr class="${r.status === 'Correct' ? 'correct-row' : 'incorrect-row'}">
+        <td>${r.questionId}</td>
+        <td>${r.chosenOption}</td>
+        <td>${r.correctAnswer}</td>
+        <td>${r.status}</td>
+        <td>${r.marks}</td>
+    </tr>
+`).join('')}
+                </table>
+            `;
+            outputDiv.innerHTML = html;
+        }
+
+        function extractPDFData(pdfContent) {
+            const questions = [];
+            // Split the content by lines for processing
+            const lines = pdfContent.split('\n').map(line => line.trim()).filter(line => line);
+
+            // Regex to match "Question ID : <id> ... Chosen Option : <option>"
+            const questionPattern = /Question ID\s*:\s*(\d+)[\s\S]*?Chosen Option\s*:\s*(\d+)/gi;
+
+            // Join lines to a single string for easier matching
+            const content = lines.join(' ');
+
+            let match;
+            while ((match = questionPattern.exec(content)) !== null) {
+                questions.push({
+                    questionId: match[1],
+                    chosenOption: match[2]
+                });
+            }
+
+            return { questions };
+        }
+    </script>
+</body>
+</html>
